@@ -1,4 +1,4 @@
-# Mini-KV: Log-Structured KV Store with fsync Strategy Analysis
+# Mini-KV: Log-Structured KV Store Under a simplified single-thread steady-state model
 
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-blue.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -49,7 +49,7 @@ A minimal log-structured key-value store designed to measure the performance imp
 
 | Mode | Behavior | Durability Guarantee |
 |------|----------|---------------------|
-| `Always` | fsync after every write | Zero data loss window |
+| `Always` | fsync after every write | Zero user-space data loss window (subject to OS / hardware guarantees) |
 | `Batch(N)` | fsync every N writes | Up to N-1 writes lost on crash |
 | `Periodic(T)` | fsync every T milliseconds | Up to T ms of writes lost |
 
@@ -87,6 +87,9 @@ Each record is stored as:
 
 **Disk Context:**  
 This NVMe SSD provides the lowest possible fsync latency (~276μs measured), making software overhead differences clearly visible. On slower disks (HDD/SATA SSD), disk latency would dominate and mask these effects.
+
+**Platform Note:**  
+All results were collected on Windows 11 with NTFS. On this platform, `File::sync_all()` maps to `FlushFileBuffers`. NTFS uses metadata journaling (not full data journaling), and write-ordering semantics differ from Linux filesystems such as ext4. Behavior — particularly around fsync latency and durability guarantees — may differ on ext4, APFS, or other filesystems.
 
 ---
 
@@ -176,7 +179,7 @@ We empirically validated durability guarantees by randomly killing the process d
 - Individual runs still satisfy `recovered ≤ durable_at_crash`
 
 **3. Periodic 100ms completes before crash**
-- All 10 runs finished all 10,000 writes before being killed
+- In this configuration, the workload completed before the injected crash, so no loss was observed. This does not eliminate the theoretical loss window.
 - 100ms window is sufficient for full write throughput
 - Confirms throughput model: 360K ops/sec × 0.1s = 36,000 possible writes
 
@@ -188,7 +191,9 @@ We empirically validated durability guarantees by randomly killing the process d
 | Batch 100 | 99 writes | 0 | 100% |
 | Periodic 100ms | Time window | 0 | 100% |
 
-**No corruption detected:** CRC and truncation successfully prevent partial records from being interpreted as valid data.
+**No corruption detected:** CRC and length-prefix framing successfully detect partial records; truncation on recovery prevents them from being interpreted as valid data. Note that CRC provides *corruption detection*, not logical consistency — it guards against torn writes but does not protect against reordered writes or higher-level semantic errors.
+
+(Because the crash is triggered after reaching a durable target, the test does not randomly interrupt mid-batch. Therefore the worst-case loss window was not fully exercised.)
 
 ---
 
@@ -227,7 +232,7 @@ periodic_100ms      10       10000          10000         0    10000    10000   
 ### 1. **fsync is the bottleneck, not disk bandwidth**
 - Each fsync costs ~276μs on NVMe
 - 373K ops/sec × 128B = 47.8 MB/s (only 1% of disk capacity)
-- Workload is latency-bound, not bandwidth-bound
+- Under small-record workloads (128B), the system is latency-bound, not bandwidth-bound. At larger record sizes (e.g. 4KB), disk bandwidth would begin to constrain throughput and this characterization may no longer hold.
 
 ### 2. **Batch size controls the throughput/latency tradeoff**
 - Small batches (100): 167K ops/sec, but P99 = 292μs
@@ -241,6 +246,7 @@ periodic_100ms      10       10000          10000         0    10000    10000   
 - CRC + length prefix + truncation on recovery
 - Invariant `recovered ≤ durable` holds across all modes
 - No corruption detected in 50+ crash runs
+- CRC ensures detection of partial writes, not logical consistency
 
 ### 5. **Performance scales with durability relaxation**
 - Always: 3.3K ops/sec (zero loss window)
@@ -254,7 +260,7 @@ periodic_100ms      10       10000          10000         0    10000    10000   
 - [ ] 4KB record size benchmark (to test bandwidth limits)
 - [ ] O_DIRECT mode (bypass page cache)
 - [ ] Group commit implementation
-- [ ] Different file systems (ext4 vs NTFS)
+- [ ] Cross-platform comparison: ext4 vs NTFS vs APFS
 - [ ] Property-based testing for crash consistency
 - [ ] Benchmark with slower disks (HDD/SATA SSD)
 
@@ -271,4 +277,4 @@ MIT
 This project was built to understand the fundamental tradeoffs between performance and durability in storage systems. It draws inspiration from:
 - The design of write-ahead logs (WAL) in databases
 - LSM-tree based storage engines
-- Classic papers on fsync and crash consistency#
+- Classic papers on fsync and crash consistency
