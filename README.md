@@ -1,4 +1,4 @@
-# Mini-KV: Log-Structured KV Store Under a simplified single-thread steady-state model
+# Mini-KV: Log-Structured KV Store with fsync Strategy Evaluation
 
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-blue.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -107,7 +107,7 @@ All results were collected on Windows 11 with NTFS. On this platform, `File::syn
 
 ### Key Observations
 
-**1. fsync is the bottleneck**
+**1. Under small-record workloads (128B), the system is latency-bound**
 - Each fsync costs ~276μs on this hardware
 - Always mode: pay this tax per write → 3.3K ops/sec
 - Batch 1000: amortize over 1000 writes → 373K ops/sec
@@ -154,9 +154,9 @@ We empirically validated durability guarantees by randomly killing the process d
 ### Methodology
 1. Child process writes 10,000 records with given sync mode
 2. Parent process waits until durable index reaches random target (2000-8000)
-3. Parent sends SIGKILL (simulating power failure)
+3. Parent sends SIGKILL (simulating abrupt process termination)
 4. Child process restarts, recovers, and we count recovered records
-5. **Core invariant validated:** `recovered ≤ durable_at_crash`
+5. **Core invariant validated:** `recovered ≤ durable_at_crash` (durable_at_crash is defined as the number of writes acknowledged after a successful fsync.)
 
 ### Results
 
