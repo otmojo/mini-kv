@@ -26,17 +26,17 @@ A minimal log-structured key-value store designed to measure the performance imp
 
 ### Architecture
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    put(key,val) │────▶│   append log    │────▶│   update index  │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+┌─────────────────┐     ┌─────────────────┐      ┌─────────────────┐
+│  put(key,val)   │───▶│   append log    │────▶│   update index  │
+└─────────────────┘     └─────────────────┘      └─────────────────┘
                                  │
                                  ▼
-                          ┌──────────────┐
-                          │   fsync?     │
-                          │ • Always     │
-                          │ • Batch(N)   │
-                          │ • Periodic(T)│
-                          └──────────────┘
+                          ┌───────────────┐
+                          │   fsync?      │
+                          │ • Always      │
+                          │ • Batch(N)    │
+                          │ • Periodic(T) │
+                          └───────────────┘
 ```
 
 ### Core Components
@@ -47,11 +47,11 @@ A minimal log-structured key-value store designed to measure the performance imp
 
 ### Sync Strategies
 
-| Mode | Behavior | Durability Guarantee |
-|------|----------|---------------------|
-| `Always` | fsync after every write | Zero user-space data loss window (subject to OS / hardware guarantees) |
-| `Batch(N)` | fsync every N writes | Up to N-1 writes lost on crash |
-| `Periodic(T)` | fsync every T milliseconds | Up to T ms of writes lost |
+| Mode          | Behavior                   | Durability Guarantee                                                   |
+|---------------|----------------------------|------------------------------------------------------------------------|
+| `Always`      | fsync after every write    | Zero user-space data loss window (subject to OS / hardware guarantees) |
+| `Batch(N)`    | fsync every N writes       | Up to N-1 writes lost on crash                                         |
+| `Periodic(T)` | fsync every T milliseconds | Up to T ms of writes lost                                              |
 
 ---
 
@@ -97,13 +97,13 @@ All results were collected on Windows 11 with NTFS. On this platform, `File::syn
 
 ### Throughput Comparison (128B records, 10,000 writes)
 
-| Mode | Throughput (ops/sec) | vs Always | P50 Latency | P99 Latency |
-|------|---------------------|-----------|-------------|-------------|
-| Always fsync | 3,387 | 1x | 276μs | 519μs |
-| Batch 100 | 167,884 | **49.6x** | 1.6μs | 292μs |
-| Batch 1000 | 373,749 | **110.3x** | 1.5μs | 6μs |
-| Periodic 10ms | 334,926 | **98.9x** | 1.6μs | 12μs |
-| Periodic 100ms | 360,762 | **106.5x** | 1.6μs | 13.4μs |
+| Mode           | Throughput (ops/sec) | vs Always  | P50 Latency | P99 Latency |
+|----------------|----------------------|------------|-------------|-------------|
+| Always fsync   | 3,387                | 1x         | 276μs       | 519μs       |
+| Batch 100      | 167,884              | **49.6x**  | 1.6μs       | 292μs       |
+| Batch 1000     | 373,749              | **110.3x** | 1.5μs       | 6μs         |
+| Periodic 10ms  | 334,926              | **98.9x**  | 1.6μs       | 12μs        |
+| Periodic 100ms | 360,762              | **106.5x** | 1.6μs       | 13.4μs      |
 
 ### Key Observations
 
@@ -160,11 +160,11 @@ We empirically validated durability guarantees by randomly killing the process d
 
 ### Results
 
-| Mode | Runs | Avg Durable | Avg Recovered | Avg Lost | Max Lost | Min Rec | Max Rec |
-|------|------|-------------|---------------|----------|----------|---------|---------|
-| always | 10 | 4,838 | 4,839 | 0 | 0 | 2,524 | 7,953 |
-| batch_100 | 10 | 4,780 | 4,864 | 0 | 0 | 3,572 | 6,400 |
-| periodic_100ms | 10 | 10,000 | 10,000 | 0 | 0 | 10,000 | 10,000 |
+| Mode           | Runs | Avg Durable | Avg Recovered | Avg Lost | Max Lost | Min Rec | Max Rec |
+|----------------|------|-------------|---------------|----------|----------|---------|---------|
+| always         | 10   | 4,838       | 4,839         | 0        | 0        | 2,524   | 7,953   |
+| batch_100      | 10   | 4,780       | 4,864         | 0        | 0        | 3,572   | 6,400   |
+| periodic_100ms | 10   | 10,000      | 10,000        | 0        | 0        | 10,000  | 10,000  |
 
 ### Key Findings
 
@@ -185,11 +185,11 @@ We empirically validated durability guarantees by randomly killing the process d
 
 ### Durability Semantics (Empirically Verified)
 
-| Mode | Worst-Case Loss | Measured Max Loss | Zero Loss Runs |
-|------|-----------------|-------------------|----------------|
-| Always | 1 write | 0 | 100% |
-| Batch 100 | 99 writes | 0 | 100% |
-| Periodic 100ms | Time window | 0 | 100% |
+| Mode           | Worst-Case Loss | Measured Max Loss | Zero Loss Runs |
+|----------------|-----------------|-------------------|----------------|
+| Always         | 1 write         | 0                 | 100%           |
+| Batch 100      | 99 writes       | 0                 | 100%           |
+| Periodic 100ms | Time window     | 0                 | 100%           |
 
 **No corruption detected:** CRC and length-prefix framing successfully detect partial records; truncation on recovery prevents them from being interpreted as valid data. Note that CRC provides *corruption detection*, not logical consistency — it guards against torn writes but does not protect against reordered writes or higher-level semantic errors.
 
